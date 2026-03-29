@@ -2,8 +2,16 @@ from fastapi import FastAPI
 from bs4 import BeautifulSoup
 import requests
 from datetime import datetime
+from fastapi.middleware.cors import CORSMiddleware
+
 
 app = FastAPI()
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5174"],
+    allow_methods=["GET"],
+)
 
 VAR_URL  = "https://www.fcbarcelona.es/es/futbol/primer-equipo/calendario"
 FEM_URL = "https://www.fcbarcelona.es/es/futbol/femenino/calendario"
