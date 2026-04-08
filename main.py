@@ -3,15 +3,17 @@ from bs4 import BeautifulSoup
 import requests
 from datetime import datetime
 from fastapi.middleware.cors import CORSMiddleware
+from zoneinfo import ZoneInfo
 
 
 app = FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173",
+    allow_origins=["https://localhost:5173",
                    "http://localhost:5174"],
     allow_methods=["GET"],
+    allow_headers=["*"],
 )
 
 VAR_URL  = "https://www.fcbarcelona.es/es/futbol/primer-equipo/calendario"
@@ -25,7 +27,7 @@ def get_next_match_date(url, tag, class_name):
     if not match:
         return None
     timestamp = int(match.find("div", class_="fixture-result-list__fixture-date")["data-fixture-date"])
-    return datetime.fromtimestamp(timestamp / 1000)
+    return datetime.fromtimestamp(timestamp / 1000, tz=ZoneInfo("Europe/Madrid"))
 
 @app.get("/")
 def root():
