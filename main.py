@@ -52,6 +52,17 @@ def get_next():
     
     return {"category": category, "datetime": date.isoformat()}
 
+@app.get("/next-fem")
+def get_fem():
+    fem = get_next_match_date(FEM_URL, "li", "fixture-result-list__fixture")
+    return {"datetime": fem.isoformat()}
+
+@app.get("/next-var")
+def get_var():
+    var   = get_next_match_date(VAR_URL,   "a",  "fixture-result-list__fixture-link")    
+    return {"datetime": var.isoformat()}
+
+
 
 
 
