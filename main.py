@@ -20,69 +20,71 @@ app.add_middleware(
 
 VAR_URL = "https://www.fcbarcelona.es/es/futbol/primer-equipo/calendario"
 FEM_URL = "https://www.fcbarcelona.es/es/futbol/femenino/calendario"
-
 MADRID_TZ = ZoneInfo("Europe/Madrid")
 
 
-def get_next_matches(url: str, tag: str, class_name: str, category: str, limit: int = 2):
+def parse_fixture(fixture, category):
+    """Extrae los datos de un elemento fixture del HTML."""
+    date_div = fixture.find("div", class_="fixture-result-list__fixture-date")
+    if not date_div or not date_div.get("data-fixture-date"):
+        return None
+
+    timestamp = int(date_div["data-fixture-date"])
+    match_dt = datetime.fromtimestamp(timestamp / 1000, tz=MADRID_TZ)
+
+    # Los nombres de equipo usan clases distintas según varonil/femenil
+    # Varonil: fixture-result-list__team-name
+    # Femenil: fixture-info__name
+    teams = fixture.find_all("span", class_="fixture-result-list__team-name")
+    if not teams:
+        teams_divs = fixture.find_all("div", class_="fixture-info__name")
+        home = teams_divs[0].get_text(strip=True) if len(teams_divs) > 0 else "FC Barcelona"
+        away = teams_divs[1].get_text(strip=True) if len(teams_divs) > 1 else "Rival"
+    else:
+        home = teams[0].get_text(strip=True) if len(teams) > 0 else "FC Barcelona"
+        away = teams[1].get_text(strip=True) if len(teams) > 1 else "Rival"
+
+    competition_tag = fixture.find("div", class_="fixture-result-list__fixture-competition")
+    competition = competition_tag.get_text(strip=True) if competition_tag else "Competición"
+
+    return {
+        "fixture_id": f"{category}-{timestamp}",
+        "category": category,
+        "datetime": match_dt.isoformat(),
+        "home_team": home,
+        "away_team": away,
+        "competition": competition,
+    }
+
+
+def get_next_matches(url, tag, class_name, category, limit=2):
     """
-    Scrape los próximos `limit` partidos de una URL del Barça.
-    Devuelve lista de dicts con: category, datetime, home_team, away_team, competition, venue.
+    Igual que tu función original pero devuelve una lista
+    con datos extra del partido.
     """
     try:
-        response = requests.get(url, timeout=10)
-        response.raise_for_status()
-    except Exception as e:
+        soup = BeautifulSoup(requests.get(url, timeout=10).text, "html.parser")
+    except Exception:
         return []
 
-    soup = BeautifulSoup(response.text, "html.parser")
-    fixtures = soup.find_all(tag, class_=class_name)
-
+    now_ts = datetime.now(tz=MADRID_TZ).timestamp() * 1000
     results = []
-    now_ts = datetime.now(tz=MADRID_TZ).timestamp() * 1000  # milisegundos
 
-    for fixture in fixtures:
+    for fixture in soup.find_all(tag, class_=class_name):
         if len(results) >= limit:
             break
 
-        # Fecha del partido
         date_div = fixture.find("div", class_="fixture-result-list__fixture-date")
         if not date_div or not date_div.get("data-fixture-date"):
             continue
 
-        timestamp = int(date_div["data-fixture-date"])
-
-        # Solo partidos futuros
-        if timestamp < now_ts:
+        # Ignorar partidos pasados (igual que tu versión original)
+        if int(date_div["data-fixture-date"]) < now_ts:
             continue
 
-        match_dt = datetime.fromtimestamp(timestamp / 1000, tz=MADRID_TZ)
-
-        # Equipos
-        teams = fixture.find_all("span", class_="fixture-result-list__team-name")
-        home_team = teams[0].get_text(strip=True) if len(teams) > 0 else "FC Barcelona"
-        away_team = teams[1].get_text(strip=True) if len(teams) > 1 else "Rival"
-
-        # Competición
-        competition_tag = fixture.find("span", class_="fixture-result-list__competition-name")
-        competition = competition_tag.get_text(strip=True) if competition_tag else "Competición"
-
-        # Estadio
-        venue_tag = fixture.find("span", class_="fixture-result-list__venue")
-        venue = venue_tag.get_text(strip=True) if venue_tag else "Por confirmar"
-
-        # ID único basado en timestamp + categoría
-        fixture_id = f"{category}-{timestamp}"
-
-        results.append({
-            "fixture_id": fixture_id,
-            "category": category,
-            "datetime": match_dt.isoformat(),
-            "home_team": home_team,
-            "away_team": away_team,
-            "competition": competition,
-            "venue": venue,
-        })
+        data = parse_fixture(fixture, category)
+        if data:
+            results.append(data)
 
     return results
 
@@ -94,24 +96,20 @@ def root():
 
 @app.get("/next-game")
 def get_next():
-    """Próximo partido global (el más cercano entre varonil y femenil)."""
+    """Próximo partido global — el más cercano entre varonil y femenil."""
     var_matches = get_next_matches(VAR_URL, "a", "fixture-result-list__fixture-link", "varonil", limit=1)
     fem_matches = get_next_matches(FEM_URL, "li", "fixture-result-list__fixture", "femenil", limit=1)
 
-    if not var_matches and not fem_matches:
+    candidates = var_matches + fem_matches
+    if not candidates:
         return {"error": "No se encontraron partidos"}
 
-    candidates = var_matches + fem_matches
-    next_match = min(candidates, key=lambda m: m["datetime"])
-    return next_match
+    return min(candidates, key=lambda m: m["datetime"])
 
 
 @app.get("/next-matches")
 def get_next_matches_hub():
-    """
-    Devuelve los próximos 2 partidos varoniles y 2 femeniles.
-    Usado por el WatchPartyHUB para mostrar opciones al crear sala.
-    """
+    """Próximos 2 varoniles y 2 femeniles — para el WatchPartyHUB."""
     var_matches = get_next_matches(VAR_URL, "a", "fixture-result-list__fixture-link", "varonil", limit=2)
     fem_matches = get_next_matches(FEM_URL, "li", "fixture-result-list__fixture", "femenil", limit=2)
 
