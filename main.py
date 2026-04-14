@@ -4,6 +4,8 @@ import requests
 from datetime import datetime
 from fastapi.middleware.cors import CORSMiddleware
 from zoneinfo import ZoneInfo
+import cloudscraper
+from fastapi.responses import Response
 
 app = FastAPI()
 
@@ -130,3 +132,22 @@ def get_fem():
 def get_var():
     """Próximos 2 partidos varoniles."""
     return get_next_matches(VAR_URL, "a", "fixture-result-list__fixture-link", "varonil", limit=2)
+
+@app.get("/rss/{category}")
+def get_rss(category: str):
+    try:
+        url = f"https://carpetasfcb.com/rss/cat/{category}"
+
+        scraper = cloudscraper.create_scraper()
+        response = scraper.get(url, timeout=15)
+
+        content = response.text
+
+        # Detect Cloudflare block
+        if "Just a moment" in content:
+            return {"error": "Blocked by Cloudflare"}
+
+        return Response(content=content, media_type="application/xml")
+
+    except Exception as e:
+        return {"error": str(e)}
